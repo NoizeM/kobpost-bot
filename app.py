@@ -1,29 +1,64 @@
 from flask import Flask, request
 import requests
-import json
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 import os
+import json
 
+# ---------- CONFIG ----------
 TOKEN = "8282597486:AAHV4fyHqc5QQjJ7y93vq0L63P9_bPtLqw8"
 ADMIN_ID = 533251328
 API_URL = f"https://api.telegram.org/bot{TOKEN}"
 
 app = Flask(__name__)
-
-DATA_FILE = "data.json"
 admin_state = {}
 
+# ---------- GOOGLE SHEETS ----------
+scope = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive"
+]
+
+creds_dict = json.loads(os.environ["GOOGLE_CREDS"])
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+client = gspread.authorize(creds)
+
+sheet = client.open("Kobelyaky Catalog").worksheet("categories")
+
 # ---------- DATA ----------
-def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+def load_categories():
+    rows = sheet.get_all_records()
+    data = {}
+    for r in rows:
+        cat = r["category"]
+        sub = r["subcategory"]
+        if cat not in data:
+            data[cat] = {}
+        if sub:
+            data[cat][sub] = []
+    return data
 
-def save_data():
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(categories, f, ensure_ascii=False, indent=2)
+def add_category(cat):
+    sheet.append_row([cat, ""])
 
-categories = load_data()
+def add_subcategory(cat, sub):
+    sheet.append_row([cat, sub])
+
+def delete_category(cat):
+    rows = sheet.get_all_values()
+    sheet.clear()
+    sheet.append_row(["category", "subcategory"])
+    for r in rows[1:]:
+        if r[0] != cat:
+            sheet.append_row(r)
+
+def delete_subcategory(cat, sub):
+    rows = sheet.get_all_values()
+    sheet.clear()
+    sheet.append_row(["category", "subcategory"])
+    for r in rows[1:]:
+        if not (r[0] == cat and r[1] == sub):
+            sheet.append_row(r)
 
 # ---------- UI ----------
 def build_keyboard(items, row_size=2):
@@ -37,11 +72,6 @@ def build_keyboard(items, row_size=2):
         keyboard.append(row)
     return {"keyboard": keyboard, "resize_keyboard": True}
 
-def main_menu():
-    if not categories:
-        return {"keyboard": [["ℹ️ Каталог порожній"]], "resize_keyboard": True}
-    return build_keyboard(categories.keys())
-
 def admin_menu():
     return {
         "keyboard": [
@@ -54,139 +84,41 @@ def admin_menu():
         "resize_keyboard": True
     }
 
-def send_message(chat_id, text, keyboard=None):
+def send(chat_id, text, kb=None):
     payload = {
         "chat_id": chat_id,
         "text": text,
         "parse_mode": "HTML"
     }
-    if keyboard:
-        payload["reply_markup"] = keyboard
+    if kb:
+        payload["reply_markup"] = kb
     requests.post(f"{API_URL}/sendMessage", json=payload)
 
 # ---------- WEBHOOK ----------
 @app.route("/", methods=["POST"])
 def webhook():
     data = request.json
-    if not data or "message" not in data:
-        return "ok"
-
-    message = data["message"]
-    chat_id = message["chat"]["id"]
-    text = message.get("text", "")
+    msg = data.get("message", {})
+    chat_id = msg.get("chat", {}).get("id")
+    text = msg.get("text", "")
     state = admin_state.get(chat_id)
 
-    # /start
+    categories = load_categories()
+
+    # START
     if text == "/start":
-        send_message(chat_id, "📍 Каталог міста", main_menu())
+        send(chat_id, "📍 Каталог міста", build_keyboard(categories.keys()))
         return "ok"
 
-    # ADMIN
+    # ADMIN PANEL
     if chat_id == ADMIN_ID and text == "/admin":
-        send_message(chat_id, "⚙️ Адмінка", admin_menu())
+        send(chat_id, "⚙️ Адмінка", admin_menu())
         return "ok"
 
-    # ----- ADMIN ACTIONS -----
+    # ---------- ADMIN ----------
     if chat_id == ADMIN_ID:
 
         if text == "⬅ Назад":
             admin_state.pop(chat_id, None)
-            send_message(chat_id, "📍 Каталог міста", main_menu())
+            send(chat_id, "📍 Каталог міста", build_keyboard(categories.keys()))
             return "ok"
-
-        if text == "➕ Додати категорію":
-            admin_state[chat_id] = "add_category"
-            send_message(chat_id, "✏️ Назва категорії (можна з емодзі):")
-            return "ok"
-
-        if state == "add_category":
-            categories[text] = {}
-            save_data()
-            admin_state.pop(chat_id)
-            send_message(chat_id, f"✅ Додано: <b>{text}</b>", admin_menu())
-            return "ok"
-
-        if text == "➕ Додати підкатегорію":
-            admin_state[chat_id] = "choose_category"
-            send_message(chat_id, "✏️ Введіть категорію:")
-            return "ok"
-
-        if state == "choose_category":
-            if text not in categories:
-                send_message(chat_id, "❌ Такої категорії нема")
-                return "ok"
-            admin_state[chat_id] = f"add_sub:{text}"
-            send_message(chat_id, "✏️ Назва підкатегорії:")
-            return "ok"
-
-        if state and state.startswith("add_sub:"):
-            cat = state.split(":")[1]
-            categories[cat][text] = []
-            save_data()
-            admin_state.pop(chat_id)
-            send_message(chat_id, f"✅ Додано <b>{text}</b>", admin_menu())
-            return "ok"
-
-        if text == "🗑 Видалити категорію":
-            admin_state[chat_id] = "delete_category"
-            send_message(chat_id, "✏️ Назва категорії:")
-            return "ok"
-
-        if state == "delete_category":
-            if text not in categories:
-                send_message(chat_id, "❌ Такої категорії нема")
-                return "ok"
-            categories.pop(text)
-            save_data()
-            admin_state.pop(chat_id)
-            send_message(chat_id, f"🗑 Видалено <b>{text}</b>", admin_menu())
-            return "ok"
-
-        if text == "🗑 Видалити підкатегорію":
-            admin_state[chat_id] = "del_sub_cat"
-            send_message(chat_id, "✏️ Введіть категорію:")
-            return "ok"
-
-        if state == "del_sub_cat":
-            if text not in categories:
-                send_message(chat_id, "❌ Такої категорії нема")
-                return "ok"
-            admin_state[chat_id] = f"del_sub:{text}"
-            send_message(chat_id, "✏️ Назва підкатегорії:")
-            return "ok"
-
-        if state and state.startswith("del_sub:"):
-            cat = state.split(":")[1]
-            if text not in categories[cat]:
-                send_message(chat_id, "❌ Такої підкатегорії нема")
-                return "ok"
-            categories[cat].pop(text)
-            save_data()
-            admin_state.pop(chat_id)
-            send_message(chat_id, f"🗑 Видалено <b>{text}</b>", admin_menu())
-            return "ok"
-
-    # ----- USER NAVIGATION -----
-    if text in categories:
-        send_message(chat_id, f"📂 {text}", build_keyboard(categories[text].keys()))
-        return "ok"
-
-    for cat, subs in categories.items():
-        if text in subs:
-            send_message(
-                chat_id,
-                f"ℹ️ <b>{text}</b>\n\n🔗 Переглянути лікаря та залишити відгук у каналі",
-                {
-                    "inline_keyboard": [[
-                        {"text": "💬 Перейти в каталог", "url": "https://t.me/your_channel"}
-                    ]]
-                }
-            )
-            return "ok"
-
-    send_message(chat_id, "⬅ Оберіть розділ", main_menu())
-    return "ok"
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
