@@ -1,3 +1,5 @@
+print("=== BOT STARTED ===")
+
 from flask import Flask, request
 import requests
 import gspread
