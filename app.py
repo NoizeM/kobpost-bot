@@ -16,6 +16,8 @@ app = Flask(__name__)
 admin_state = {}
 
 # ---------- GOOGLE SHEETS ----------
+
+sheet.append_row(["ТЕСТ З КОДУ", ""])
 scope = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive"
