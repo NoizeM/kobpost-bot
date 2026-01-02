@@ -2,8 +2,10 @@ import os
 import json
 import gspread
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from google.oauth2.service_account import Credentials
+
+print("=== BOT STARTED ===")
 
 # ---------- CONFIG ----------
 BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -24,11 +26,11 @@ sheet = client.open_by_key(SPREADSHEET_ID).worksheet("categories")
 # ---------- HELPERS ----------
 def load_categories():
     rows = sheet.get_all_records()
-    categories = []
+    cats = []
     for r in rows:
         if r.get("category"):
-            categories.append(r["category"])
-    return list(dict.fromkeys(categories))  # унікальні
+            cats.append(r["category"])
+    return list(dict.fromkeys(cats))
 
 def build_keyboard(items, row_size=2):
     keyboard, row = [], []
@@ -42,25 +44,26 @@ def build_keyboard(items, row_size=2):
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 # ---------- HANDLERS ----------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def start(update: Update, context):
     categories = load_categories()
-
     if not categories:
-        await update.message.reply_text("Каталог порожній")
+        update.message.reply_text("Каталог порожній")
         return
 
-    await update.message.reply_text(
+    update.message.reply_text(
         "📍 Каталог міста",
         reply_markup=build_keyboard(categories)
     )
 
 # ---------- MAIN ----------
 def main():
-    print("=== BOT STARTED ===")
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
 
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.run_polling()
+    dp.add_handler(CommandHandler("start", start))
+
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == "__main__":
     main()
