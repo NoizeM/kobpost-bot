@@ -23,7 +23,9 @@ creds_dict = json.loads(os.environ["GOOGLE_CREDS"])
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
 
-sheet = client.open("Kobelyaky Catalog").worksheet("categories")
+spreadsheet = client.open_by_key("1DlZcHWX_Gjatf6Dfw6XIT7an4jRiED6K_ZgJwar0FhI")
+sheet = spreadsheet.worksheet("categories")
+
 
 # ---------- DATA ----------
 def load_categories():
