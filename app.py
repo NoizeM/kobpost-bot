@@ -2,17 +2,15 @@ import os
 import json
 import gspread
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram.ext import Application, CommandHandler, ContextTypes
 from google.oauth2.service_account import Credentials
 
 print("=== BOT STARTED ===")
 
-# ---------- CONFIG ----------
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 ADMIN_ID = 533251328
 SPREADSHEET_ID = "1DlZcHWX_Gjatf6Dfw6XIT7an4jRiED6K_ZgJwar0FhI"
 
-# ---------- GOOGLE SHEETS ----------
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
@@ -23,47 +21,33 @@ creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
 client = gspread.authorize(creds)
 sheet = client.open_by_key(SPREADSHEET_ID).worksheet("categories")
 
-# ---------- HELPERS ----------
 def load_categories():
     rows = sheet.get_all_records()
-    cats = []
-    for r in rows:
-        if r.get("category"):
-            cats.append(r["category"])
+    cats = [r["category"] for r in rows if r.get("category")]
     return list(dict.fromkeys(cats))
 
 def build_keyboard(items, row_size=2):
-    keyboard, row = [], []
-    for item in items:
-        row.append(item)
+    kb, row = [], []
+    for i in items:
+        row.append(i)
         if len(row) == row_size:
-            keyboard.append(row)
+            kb.append(row)
             row = []
     if row:
-        keyboard.append(row)
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        kb.append(row)
+    return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
-# ---------- HANDLERS ----------
-def start(update: Update, context):
-    categories = load_categories()
-    if not categories:
-        update.message.reply_text("Каталог порожній")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cats = load_categories()
+    if not cats:
+        await update.message.reply_text("Каталог порожній")
         return
+    await update.message.reply_text("📍 Каталог міста", reply_markup=build_keyboard(cats))
 
-    update.message.reply_text(
-        "📍 Каталог міста",
-        reply_markup=build_keyboard(categories)
-    )
-
-# ---------- MAIN ----------
 def main():
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
-
-    dp.add_handler(CommandHandler("start", start))
-
-    updater.start_polling()
-    updater.idle()
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
