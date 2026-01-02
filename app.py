@@ -16,19 +16,27 @@ app = Flask(__name__)
 admin_state = {}
 
 # ---------- GOOGLE SHEETS ----------
+import gspread
+import os, json
+from google.oauth2.service_account import Credentials
 
-sheet.append_row(["ТЕСТ З КОДУ", ""])
-scope = [
-    "https://spreadsheets.google.com/feeds",
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
 
 creds_dict = json.loads(os.environ["GOOGLE_CREDS"])
-creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
 client = gspread.authorize(creds)
 
-spreadsheet = client.open_by_key("1DlZcHWX_Gjatf6Dfw6XIT7an4jRiED6K_ZgJwar0FhI")
+spreadsheet = client.open_by_key(
+    "1DlZcHWX_Gjatf6Dfw6XIT7an4jRiED6K_ZgJwar0FhI"
+)
 sheet = spreadsheet.worksheet("categories")
+
+# 🔥 ТЕСТ ЗАПИСУ
+sheet.append_row(["ТЕСТ З КОДУ", ""])
+
 
 
 # ---------- DATA ----------
