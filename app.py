@@ -1,5 +1,7 @@
 from flask import Flask, request
 import requests
+import json
+import os
 
 TOKEN = "8282597486:AAHV4fyHqc5QQjJ7y93vq0L63P9_bPtLqw8"
 ADMIN_ID = 533251328
@@ -7,8 +9,20 @@ API_URL = f"https://api.telegram.org/bot{TOKEN}"
 
 app = Flask(__name__)
 
-# ====== ДАНІ ======
-categories = {}
+DATA_FILE = "data.json"
+
+# ====== ЗАВАНТАЖЕННЯ / ЗБЕРЕЖЕННЯ ======
+def load_data():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def save_data():
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(categories, f, ensure_ascii=False, indent=2)
+
+categories = load_data()
 admin_state = {}
 
 # ====== ДОПОМІЖНІ ======
@@ -24,6 +38,8 @@ def send_message(chat_id, text, keyboard=None):
 
 
 def main_menu():
+    if not categories:
+        return {"keyboard": [["ℹ️ Каталог порожній"]], "resize_keyboard": True}
     return {
         "keyboard": [[name] for name in categories.keys()],
         "resize_keyboard": True
@@ -40,7 +56,6 @@ def admin_menu():
         ],
         "resize_keyboard": True
     }
-
 
 # ====== WEBHOOK ======
 @app.route("/", methods=["POST"])
@@ -77,6 +92,7 @@ def webhook():
 
         if state == "add_category":
             categories[text] = {}
+            save_data()
             admin_state.pop(chat_id)
             send_message(chat_id, f"✅ Категорія <b>{text}</b> додана", admin_menu())
             return "ok"
@@ -97,6 +113,7 @@ def webhook():
         if state and state.startswith("add_sub:"):
             cat = state.split(":")[1]
             categories[cat][text] = []
+            save_data()
             admin_state.pop(chat_id)
             send_message(chat_id, f"✅ Підкатегорія <b>{text}</b> додана", admin_menu())
             return "ok"
@@ -120,12 +137,13 @@ def webhook():
                 send_message(chat_id, "❌ Нема такої підкатегорії")
                 return "ok"
             admin_state[chat_id] = f"contact_data:{cat}:{text}"
-            send_message(chat_id, "✏️ Введіть контакт (імʼя, телефон, опис, посилання):")
+            send_message(chat_id, "✏️ Введіть контакт:")
             return "ok"
 
         if state and state.startswith("contact_data:"):
             _, cat, sub = state.split(":")
             categories[cat][sub].append(text)
+            save_data()
             admin_state.pop(chat_id)
             send_message(chat_id, "✅ Контакт додано", admin_menu())
             return "ok"
@@ -134,21 +152,4 @@ def webhook():
     if text in categories:
         subs = categories[text]
         keyboard = {"keyboard": [[s] for s in subs], "resize_keyboard": True}
-        send_message(chat_id, f"📂 <b>{text}</b>", keyboard)
-        return "ok"
-
-    for cat, subs in categories.items():
-        if text in subs:
-            items = subs[text]
-            if not items:
-                send_message(chat_id, "ℹ️ Поки що порожньо")
-            else:
-                send_message(chat_id, "\n\n".join(items))
-            return "ok"
-
-    return "ok"
-
-
-@app.route("/", methods=["GET"])
-def index():
-    return "Bot is running"
+        send_message(chat_id, f"📂 <b>{text}</b>"
